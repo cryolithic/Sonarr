@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using NLog;
+using NzbDrone.Common.Cache;
 using NzbDrone.Core.Configuration;
 using NzbDrone.Core.Datastore;
 using NzbDrone.Core.MediaFiles;
@@ -22,36 +23,41 @@ namespace NzbDrone.Core.Tv
         List<Episode> FindEpisodesBySceneNumbering(int seriesId, int sceneAbsoluteEpisodeNumber);
         Episode FindEpisode(int seriesId, string date, int? part);
         List<Episode> GetEpisodeBySeries(int seriesId);
+        List<Episode> GetEpisodesBySeries(List<int> seriesIds);
         List<Episode> GetEpisodesBySeason(int seriesId, int seasonNumber);
         List<Episode> GetEpisodesBySceneSeason(int seriesId, int sceneSeasonNumber);
         List<Episode> EpisodesWithFiles(int seriesId);
-        PagingSpec<Episode> EpisodesWithoutFiles(PagingSpec<Episode> pagingSpec);
+        PagingSpec<Episode> EpisodesWithoutFiles(PagingSpec<Episode> pagingSpec, bool includeSpecials, HashSet<int> seriesTags = null);
         List<Episode> GetEpisodesByFileId(int episodeFileId);
         void UpdateEpisode(Episode episode);
         void SetEpisodeMonitored(int episodeId, bool monitored);
         void SetMonitored(IEnumerable<int> ids, bool monitored);
         void UpdateEpisodes(List<Episode> episodes);
         void UpdateLastSearchTime(List<Episode> episodes);
-        List<Episode> EpisodesBetweenDates(DateTime start, DateTime end, bool includeUnmonitored);
+        List<Episode> EpisodesBetweenDates(DateTime start, DateTime end, bool includeUnmonitored, bool includeSpecials);
         void InsertMany(List<Episode> episodes);
         void UpdateMany(List<Episode> episodes);
         void DeleteMany(List<Episode> episodes);
         void SetEpisodeMonitoredBySeason(int seriesId, int seasonNumber, bool monitored);
+        List<int> SetEpisodeMonitoredBySeries(int seriesId, MonitorTypes monitor, int firstSeason, int lastSeason);
     }
 
     public class EpisodeService : IEpisodeService,
                                   IHandle<EpisodeFileDeletedEvent>,
                                   IHandle<EpisodeFileAddedEvent>,
-                                  IHandleAsync<SeriesDeletedEvent>
+                                  IHandleAsync<SeriesDeletedEvent>,
+                                  IHandleAsync<SeriesScannedEvent>
     {
         private readonly IEpisodeRepository _episodeRepository;
         private readonly IConfigService _configService;
+        private readonly ICached<HashSet<int>> _cache;
         private readonly Logger _logger;
 
-        public EpisodeService(IEpisodeRepository episodeRepository, IConfigService configService, Logger logger)
+        public EpisodeService(IEpisodeRepository episodeRepository, IConfigService configService, ICacheManager cacheManager, Logger logger)
         {
             _episodeRepository = episodeRepository;
             _configService = configService;
+            _cache = cacheManager.GetCache<HashSet<int>>(GetType());
             _logger = logger;
         }
 
@@ -93,6 +99,11 @@ namespace NzbDrone.Core.Tv
         public List<Episode> GetEpisodeBySeries(int seriesId)
         {
             return _episodeRepository.GetEpisodes(seriesId).ToList();
+        }
+
+        public List<Episode> GetEpisodesBySeries(List<int> seriesIds)
+        {
+            return _episodeRepository.GetEpisodesBySeriesIds(seriesIds).ToList();
         }
 
         public List<Episode> GetEpisodesBySeason(int seriesId, int seasonNumber)
@@ -148,11 +159,9 @@ namespace NzbDrone.Core.Tv
             return _episodeRepository.EpisodesWithFiles(seriesId);
         }
 
-        public PagingSpec<Episode> EpisodesWithoutFiles(PagingSpec<Episode> pagingSpec)
+        public PagingSpec<Episode> EpisodesWithoutFiles(PagingSpec<Episode> pagingSpec, bool includeSpecials, HashSet<int> seriesTags = null)
         {
-            var episodeResult = _episodeRepository.EpisodesWithoutFiles(pagingSpec, true);
-
-            return episodeResult;
+            return _episodeRepository.EpisodesWithoutFiles(pagingSpec, includeSpecials, seriesTags);
         }
 
         public List<Episode> GetEpisodesByFileId(int episodeFileId)
@@ -183,6 +192,11 @@ namespace NzbDrone.Core.Tv
             _episodeRepository.SetMonitoredBySeason(seriesId, seasonNumber, monitored);
         }
 
+        public List<int> SetEpisodeMonitoredBySeries(int seriesId, MonitorTypes monitor, int firstSeason, int lastSeason)
+        {
+            return _episodeRepository.SetMonitored(seriesId, monitor, firstSeason, lastSeason);
+        }
+
         public void UpdateEpisodes(List<Episode> episodes)
         {
             _episodeRepository.UpdateMany(episodes);
@@ -193,9 +207,9 @@ namespace NzbDrone.Core.Tv
             _episodeRepository.SetFields(episodes, e => e.LastSearchTime);
         }
 
-        public List<Episode> EpisodesBetweenDates(DateTime start, DateTime end, bool includeUnmonitored)
+        public List<Episode> EpisodesBetweenDates(DateTime start, DateTime end, bool includeUnmonitored, bool includeSpecials)
         {
-            var episodes = _episodeRepository.EpisodesBetweenDates(start.ToUniversalTime(), end.ToUniversalTime(), includeUnmonitored);
+            var episodes = _episodeRepository.EpisodesBetweenDates(start.ToUniversalTime(), end.ToUniversalTime(), includeUnmonitored, includeSpecials);
 
             return episodes;
         }
@@ -213,34 +227,6 @@ namespace NzbDrone.Core.Tv
         public void DeleteMany(List<Episode> episodes)
         {
             _episodeRepository.DeleteMany(episodes);
-        }
-
-        public void HandleAsync(SeriesDeletedEvent message)
-        {
-            var episodes = _episodeRepository.GetEpisodesBySeriesIds(message.Series.Select(s => s.Id).ToList());
-            _episodeRepository.DeleteMany(episodes);
-        }
-
-        public void Handle(EpisodeFileDeletedEvent message)
-        {
-            foreach (var episode in GetEpisodesByFileId(message.EpisodeFile.Id))
-            {
-                _logger.Debug("Detaching episode {0} from file.", episode.Id);
-
-                var unmonitorForReason = message.Reason != DeleteMediaFileReason.Upgrade &&
-                                         message.Reason != DeleteMediaFileReason.ManualOverride;
-
-                _episodeRepository.ClearFileId(episode, unmonitorForReason && _configService.AutoUnmonitorPreviouslyDownloadedEpisodes);
-            }
-        }
-
-        public void Handle(EpisodeFileAddedEvent message)
-        {
-            foreach (var episode in message.EpisodeFile.Episodes.Value)
-            {
-                _episodeRepository.SetFileId(episode, message.EpisodeFile.Id);
-                _logger.Debug("Linking [{0}] > [{1}]", message.EpisodeFile.RelativePath, episode);
-            }
         }
 
         private Episode FindOneByAirDate(int seriesId, string date, int? part)
@@ -276,6 +262,74 @@ namespace NzbDrone.Core.Tv
             }
 
             throw new InvalidOperationException($"Multiple episodes with the same air date found. Date: {date}");
+        }
+
+        public void Handle(EpisodeFileDeletedEvent message)
+        {
+            foreach (var episode in GetEpisodesByFileId(message.EpisodeFile.Id))
+            {
+                _logger.Debug("Detaching episode {0} from file.", episode.Id);
+
+                var unmonitorEpisodes = _configService.AutoUnmonitorPreviouslyDownloadedEpisodes;
+
+                var unmonitorForReason = message.Reason != DeleteMediaFileReason.Upgrade &&
+                                         message.Reason != DeleteMediaFileReason.ManualOverride &&
+                                         message.Reason != DeleteMediaFileReason.MissingFromDisk;
+
+                // If episode is being unlinked because it's missing from disk store it for
+                if (message.Reason == DeleteMediaFileReason.MissingFromDisk && unmonitorEpisodes)
+                {
+                    lock (_cache)
+                    {
+                        var ids = _cache.Get(episode.SeriesId.ToString(), () => new HashSet<int>());
+
+                        ids.Add(episode.Id);
+                    }
+                }
+
+                _episodeRepository.ClearFileId(episode, unmonitorForReason && unmonitorEpisodes);
+            }
+        }
+
+        public void Handle(EpisodeFileAddedEvent message)
+        {
+            foreach (var episode in message.EpisodeFile.Episodes.Value)
+            {
+                _episodeRepository.SetFileId(episode, message.EpisodeFile.Id);
+
+                lock (_cache)
+                {
+                    var ids = _cache.Find(episode.SeriesId.ToString());
+
+                    if (ids?.Contains(episode.Id) == true)
+                    {
+                        ids.Remove(episode.Id);
+                    }
+                }
+
+                _logger.Debug("Linking [{0}] > [{1}]", message.EpisodeFile.RelativePath, episode);
+            }
+        }
+
+        public void HandleAsync(SeriesDeletedEvent message)
+        {
+            var episodes = _episodeRepository.GetEpisodesBySeriesIds(message.Series.Select(s => s.Id).ToList());
+            _episodeRepository.DeleteMany(episodes);
+        }
+
+        public void HandleAsync(SeriesScannedEvent message)
+        {
+            lock (_cache)
+            {
+                var ids = _cache.Find(message.Series.Id.ToString());
+
+                if (ids?.Any() == true)
+                {
+                    _episodeRepository.SetMonitored(ids, false);
+                }
+
+                _cache.Remove(message.Series.Id.ToString());
+            }
         }
     }
 }

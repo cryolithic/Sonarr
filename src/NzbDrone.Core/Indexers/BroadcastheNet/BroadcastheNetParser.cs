@@ -11,7 +11,7 @@ namespace NzbDrone.Core.Indexers.BroadcastheNet
 {
     public class BroadcastheNetParser : IParseIndexerResponse
     {
-        private static readonly Regex RegexProtocol = new ("^https?:", RegexOptions.Compiled);
+        private static readonly Regex RegexProtocol = new("^https?:", RegexOptions.Compiled);
 
         public IList<ReleaseInfo> ParseResponse(IndexerResponse indexerResponse)
         {
@@ -81,7 +81,8 @@ namespace NzbDrone.Core.Indexers.BroadcastheNet
                     Source = torrent.Source,
                     Container = torrent.Container,
                     Codec = torrent.Codec,
-                    Resolution = torrent.Resolution
+                    Resolution = torrent.Resolution,
+                    IndexerFlags = GetIndexerFlags(torrent)
                 };
 
                 if (torrent.TvdbID is > 0)
@@ -94,10 +95,38 @@ namespace NzbDrone.Core.Indexers.BroadcastheNet
                     torrentInfo.TvRageId = torrent.TvrageID.Value;
                 }
 
+                if (torrent.ImdbID.IsNotNullOrWhiteSpace() && int.TryParse(torrent.ImdbID, out var imdbId) && imdbId > 0)
+                {
+                    torrentInfo.ImdbId = $"tt{imdbId:D7}";
+                }
+
                 results.Add(torrentInfo);
             }
 
             return results;
+        }
+
+        private static IndexerFlags GetIndexerFlags(BroadcastheNetTorrent item)
+        {
+            IndexerFlags flags = 0;
+            flags |= IndexerFlags.Freeleech;
+
+            switch (item.Origin.ToUpperInvariant())
+            {
+                case "INTERNAL":
+                    flags |= IndexerFlags.Internal;
+                    break;
+                case "SCENE":
+                    flags |= IndexerFlags.Scene;
+                    break;
+            }
+
+            if (item.Tags?.Contains("Subtitles") == true)
+            {
+                flags |= IndexerFlags.Subtitles;
+            }
+
+            return flags;
         }
 
         private string CleanReleaseName(string releaseName)

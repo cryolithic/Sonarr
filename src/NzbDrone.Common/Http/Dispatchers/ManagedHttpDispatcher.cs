@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.Security;
@@ -7,8 +6,10 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using NLog;
 using NzbDrone.Common.Cache;
 using NzbDrone.Common.Extensions;
+using NzbDrone.Common.Http.HappyEyeballs;
 using NzbDrone.Common.Http.Proxy;
 
 namespace NzbDrone.Common.Http.Dispatchers
@@ -17,22 +18,20 @@ namespace NzbDrone.Common.Http.Dispatchers
     {
         private const string NO_PROXY_KEY = "no-proxy";
 
-        private const int connection_establish_timeout = 2000;
-        private static bool useIPv6 = Socket.OSSupportsIPv6;
-        private static bool hasResolvedIPv6Availability;
-
         private readonly IHttpProxySettingsProvider _proxySettingsProvider;
         private readonly ICreateManagedWebProxy _createManagedWebProxy;
         private readonly ICertificateValidationService _certificateValidationService;
         private readonly IUserAgentBuilder _userAgentBuilder;
         private readonly ICached<System.Net.Http.HttpClient> _httpClientCache;
         private readonly ICached<CredentialCache> _credentialCache;
+        private readonly HttpHappyEyeballs _httpHappyEyeballs;
 
         public ManagedHttpDispatcher(IHttpProxySettingsProvider proxySettingsProvider,
             ICreateManagedWebProxy createManagedWebProxy,
             ICertificateValidationService certificateValidationService,
             IUserAgentBuilder userAgentBuilder,
-            ICacheManager cacheManager)
+            ICacheManager cacheManager,
+            Logger logger)
         {
             _proxySettingsProvider = proxySettingsProvider;
             _createManagedWebProxy = createManagedWebProxy;
@@ -41,15 +40,15 @@ namespace NzbDrone.Common.Http.Dispatchers
 
             _httpClientCache = cacheManager.GetCache<System.Net.Http.HttpClient>(typeof(ManagedHttpDispatcher));
             _credentialCache = cacheManager.GetCache<CredentialCache>(typeof(ManagedHttpDispatcher), "credentialcache");
+
+            _httpHappyEyeballs = new HttpHappyEyeballs(logger);
         }
 
-        public async Task<HttpResponse> GetResponseAsync(HttpRequest request, CookieContainer cookies)
+        public async Task<HttpResponse> GetResponseAsync(HttpRequest request, CookieContainer cookies, CancellationToken cancellationToken = default)
         {
-            var requestMessage = new HttpRequestMessage(request.Method, (Uri)request.Url)
-            {
-                Version = HttpVersion.Version20,
-                VersionPolicy = HttpVersionPolicy.RequestVersionOrLower
-            };
+            using var requestMessage = new HttpRequestMessage(request.Method, (Uri)request.Url);
+            requestMessage.Version = HttpVersion.Version20;
+            requestMessage.VersionPolicy = HttpVersionPolicy.RequestVersionOrLower;
             requestMessage.Headers.UserAgent.ParseAdd(_userAgentBuilder.GetUserAgent(request.UseSimplifiedUserAgent));
             requestMessage.Headers.ConnectionClose = !request.ConnectionKeepAlive;
 
@@ -59,7 +58,8 @@ namespace NzbDrone.Common.Http.Dispatchers
                 requestMessage.Headers.Add("Cookie", cookieHeader);
             }
 
-            using var cts = new CancellationTokenSource();
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
             if (request.RequestTimeout != TimeSpan.Zero)
             {
                 cts.CancelAfter(request.RequestTimeout);
@@ -76,7 +76,7 @@ namespace NzbDrone.Common.Http.Dispatchers
                 {
                     // Manually set header to avoid initial challenge response
                     var authInfo = bc.UserName + ":" + bc.Password;
-                    authInfo = Convert.ToBase64String(Encoding.GetEncoding("ISO-8859-1").GetBytes(authInfo));
+                    authInfo = Convert.ToBase64String(Encoding.UTF8.GetBytes(authInfo));
                     requestMessage.Headers.Add("Authorization", "Basic " + authInfo);
                 }
                 else if (request.Credentials is NetworkCredential nc)
@@ -102,8 +102,10 @@ namespace NzbDrone.Common.Http.Dispatchers
 
             var httpClient = GetClient(request.Url);
 
-            using var responseMessage = await httpClient.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+            try
             {
+                using var responseMessage = await httpClient.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+
                 byte[] data = null;
 
                 try
@@ -128,6 +130,10 @@ namespace NzbDrone.Common.Http.Dispatchers
 
                 return new HttpResponse(request, new HttpHeader(headers), data, responseMessage.StatusCode, responseMessage.Version);
             }
+            catch (OperationCanceledException ex) when (cts.IsCancellationRequested)
+            {
+                throw new WebException("Http request timed out", ex, WebExceptionStatus.Timeout, null);
+            }
         }
 
         protected virtual System.Net.Http.HttpClient GetClient(HttpUri uri)
@@ -149,7 +155,8 @@ namespace NzbDrone.Common.Http.Dispatchers
                 Credentials = GetCredentialCache(),
                 PreAuthenticate = true,
                 MaxConnectionsPerServer = 12,
-                ConnectCallback = onConnect,
+                PooledConnectionLifetime = TimeSpan.FromMinutes(30),
+                ConnectCallback = Socket.OSSupportsIPv6 ? _httpHappyEyeballs.OnConnect : null,
                 SslOptions = new SslClientAuthenticationOptions
                 {
                     RemoteCertificateValidationCallback = _certificateValidationService.ShouldByPassValidationError
@@ -238,68 +245,6 @@ namespace NzbDrone.Common.Http.Dispatchers
         private CredentialCache GetCredentialCache()
         {
             return _credentialCache.Get("credentialCache", () => new CredentialCache());
-        }
-
-        private static async ValueTask<Stream> onConnect(SocketsHttpConnectionContext context, CancellationToken cancellationToken)
-        {
-            // Until .NET supports an implementation of Happy Eyeballs (https://tools.ietf.org/html/rfc8305#section-2), let's make IPv4 fallback work in a simple way.
-            // This issue is being tracked at https://github.com/dotnet/runtime/issues/26177 and expected to be fixed in .NET 6.
-            if (useIPv6)
-            {
-                try
-                {
-                    var localToken = cancellationToken;
-
-                    if (!hasResolvedIPv6Availability)
-                    {
-                        // to make things move fast, use a very low timeout for the initial ipv6 attempt.
-                        var quickFailCts = new CancellationTokenSource(connection_establish_timeout);
-                        var linkedTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, quickFailCts.Token);
-
-                        localToken = linkedTokenSource.Token;
-                    }
-
-                    return await attemptConnection(AddressFamily.InterNetworkV6, context, localToken);
-                }
-                catch
-                {
-                    // very naively fallback to ipv4 permanently for this execution based on the response of the first connection attempt.
-                    // note that this may cause users to eventually get switched to ipv4 (on a random failure when they are switching networks, for instance)
-                    // but in the interest of keeping this implementation simple, this is acceptable.
-                    useIPv6 = false;
-                }
-                finally
-                {
-                    hasResolvedIPv6Availability = true;
-                }
-            }
-
-            // fallback to IPv4.
-            return await attemptConnection(AddressFamily.InterNetwork, context, cancellationToken);
-        }
-
-        private static async ValueTask<Stream> attemptConnection(AddressFamily addressFamily, SocketsHttpConnectionContext context, CancellationToken cancellationToken)
-        {
-            // The following socket constructor will create a dual-mode socket on systems where IPV6 is available.
-            var socket = new Socket(addressFamily, SocketType.Stream, ProtocolType.Tcp)
-            {
-                // Turn off Nagle's algorithm since it degrades performance in most HttpClient scenarios.
-                NoDelay = true
-            };
-
-            try
-            {
-                await socket.ConnectAsync(context.DnsEndPoint, cancellationToken).ConfigureAwait(false);
-
-                // The stream should take the ownership of the underlying socket,
-                // closing it when it's disposed.
-                return new NetworkStream(socket, ownsSocket: true);
-            }
-            catch
-            {
-                socket.Dispose();
-                throw;
-            }
         }
     }
 }

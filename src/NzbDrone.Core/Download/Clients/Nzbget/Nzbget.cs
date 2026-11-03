@@ -73,7 +73,7 @@ namespace NzbDrone.Core.Download.Clients.Nzbget
                 queueItem.Title = item.NzbName;
                 queueItem.TotalSize = totalSize;
                 queueItem.Category = item.Category;
-                queueItem.DownloadClientInfo = DownloadClientItemClientInfo.FromDownloadClient(this);
+                queueItem.DownloadClientInfo = DownloadClientItemClientInfo.FromDownloadClient(this, false);
                 queueItem.CanMoveFiles = true;
                 queueItem.CanBeRemoved = true;
 
@@ -120,7 +120,7 @@ namespace NzbDrone.Core.Download.Clients.Nzbget
                 var historyItem = new DownloadClientItem();
                 var itemDir = item.FinalDir.IsNullOrWhiteSpace() ? item.DestDir : item.FinalDir;
 
-                historyItem.DownloadClientInfo = DownloadClientItemClientInfo.FromDownloadClient(this);
+                historyItem.DownloadClientInfo = DownloadClientItemClientInfo.FromDownloadClient(this, false);
                 historyItem.DownloadId = droneParameter == null ? item.Id.ToString() : droneParameter.Value.ToString();
                 historyItem.Title = item.Name;
                 historyItem.TotalSize = MakeInt64(item.FileSizeHi, item.FileSizeLo);
@@ -130,7 +130,7 @@ namespace NzbDrone.Core.Download.Clients.Nzbget
                     new Dictionary<string, object>
                     {
                         { "parStatus", item.ParStatus }, { "unpackStatus", item.UnpackStatus },
-                        { "moveStatus", item.MoveStatus }, { "scriptStaus", item.ScriptStatus },
+                        { "moveStatus", item.MoveStatus }, { "scriptStatus", item.ScriptStatus },
                         { "deleteStatus", item.DeleteStatus }, { "markStatus", item.MarkStatus }
                     });
                 historyItem.Status = DownloadItemStatus.Completed;
@@ -217,7 +217,7 @@ namespace NzbDrone.Core.Download.Clients.Nzbget
 
             var status = new DownloadClientInfo
             {
-                IsLocalhost = Settings.Host == "127.0.0.1" || Settings.Host == "localhost"
+                IsLocalhost = Settings.Host.IsLocalhostAddress()
             };
 
             if (category != null)

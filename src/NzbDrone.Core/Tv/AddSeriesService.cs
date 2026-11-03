@@ -76,22 +76,15 @@ namespace NzbDrone.Core.Tv
                     var series = AddSkyhookData(s);
                     series = SetPropertiesAndValidate(series);
                     series.Added = added;
-                    if (existingSeriesTvdbIds.Any(f => f == series.TvdbId))
+                    if (existingSeriesTvdbIds.ContainsValue(series.TvdbId))
                     {
-                        _logger.Debug("TVDB ID {0} was not added due to validation failure: Series already exists in database", s.TvdbId);
+                        _logger.Debug("TVDB ID {0} was not added due to validation failure: Series {1} already exists in database", s.TvdbId, s);
                         continue;
                     }
 
                     if (seriesToAdd.Any(f => f.TvdbId == series.TvdbId))
                     {
-                        _logger.Debug("TVDB ID {0} was not added due to validation failure: Series already exists on list", s.TvdbId);
-                        continue;
-                    }
-
-                    var duplicateSlug = seriesToAdd.FirstOrDefault(f => f.TitleSlug == series.TitleSlug);
-                    if (duplicateSlug != null)
-                    {
-                        _logger.Debug("TVDB ID {0} was not added due to validation failure: Duplicate Slug {1} used by series {2}", s.TvdbId, s.TitleSlug, duplicateSlug.TvdbId);
+                        _logger.Trace("TVDB ID {0} was already added from another import list, not adding series {1} again", s.TvdbId, s);
                         continue;
                     }
 
@@ -104,7 +97,7 @@ namespace NzbDrone.Core.Tv
                         throw;
                     }
 
-                    _logger.Debug("TVDB ID {0} was not added due to validation failures. {1}", s.TvdbId, ex.Message);
+                    _logger.Debug("Series {0} with TVDB ID {1} was not added due to validation failures. {2}", s, s.TvdbId, ex.Message);
                 }
             }
 
@@ -117,11 +110,11 @@ namespace NzbDrone.Core.Tv
 
             try
             {
-                tuple = _seriesInfo.GetSeriesInfo(newSeries.TvdbId);
+                tuple = _seriesInfo.GetSeriesInfo(newSeries.TvdbId, newSeries.Language, newSeries.SeasonType);
             }
             catch (SeriesNotFoundException)
             {
-                _logger.Error("TVDB ID {0} was not found, it may have been removed from TheTVDB.  Path: {1}", newSeries.TvdbId, newSeries.Path);
+                _logger.Error("Series {0} with TVDB ID {1} was not found, it may have been removed from TheTVDB. Path: {2}", newSeries, newSeries.TvdbId, newSeries.Path);
 
                 throw new ValidationException(new List<ValidationFailure>
                                               {

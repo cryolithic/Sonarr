@@ -10,6 +10,7 @@ using NzbDrone.Core.Configuration;
 using NzbDrone.Core.Http.CloudFlare;
 using NzbDrone.Core.ImportLists.Exceptions;
 using NzbDrone.Core.Indexers.Exceptions;
+using NzbDrone.Core.Localization;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.Validation;
@@ -31,21 +32,22 @@ namespace NzbDrone.Core.ImportLists
         public abstract IImportListRequestGenerator GetRequestGenerator();
         public abstract IParseImportListResponse GetParser();
 
-        public HttpImportListBase(IHttpClient httpClient, IImportListStatusService importListStatusService, IConfigService configService, IParsingService parsingService, Logger logger)
-            : base(importListStatusService, configService, parsingService, logger)
+        public HttpImportListBase(IHttpClient httpClient, IImportListStatusService importListStatusService, IConfigService configService, IParsingService parsingService, ILocalizationService localizationService, Logger logger)
+            : base(importListStatusService, configService, parsingService, localizationService, logger)
         {
             _httpClient = httpClient;
         }
 
-        public override IList<ImportListItemInfo> Fetch()
+        public override ImportListFetchResult Fetch()
         {
             return FetchItems(g => g.GetListItems(), true);
         }
 
-        protected virtual IList<ImportListItemInfo> FetchItems(Func<IImportListRequestGenerator, ImportListPageableRequestChain> pageableRequestChainSelector, bool isRecent = false)
+        protected virtual ImportListFetchResult FetchItems(Func<IImportListRequestGenerator, ImportListPageableRequestChain> pageableRequestChainSelector, bool isRecent = false)
         {
             var releases = new List<ImportListItemInfo>();
             var url = string.Empty;
+            var anyFailure = true;
 
             try
             {
@@ -91,6 +93,7 @@ namespace NzbDrone.Core.ImportLists
                 }
 
                 _importListStatusService.RecordSuccess(Definition.Id);
+                anyFailure = false;
             }
             catch (WebException webException)
             {
@@ -162,7 +165,7 @@ namespace NzbDrone.Core.ImportLists
                 _logger.Error(ex, "An error occurred while processing feed. {0}", url);
             }
 
-            return CleanupListItems(releases);
+            return new ImportListFetchResult(CleanupListItems(releases), anyFailure);
         }
 
         protected virtual bool IsValidItem(ImportListItemInfo listItem)
@@ -212,7 +215,7 @@ namespace NzbDrone.Core.ImportLists
                 var generator = GetRequestGenerator();
                 var releases = FetchPage(generator.GetListItems().GetAllTiers().First().First(), parser);
 
-                if (releases.Empty())
+                if (!releases.Any(IsValidItem))
                 {
                     return new NzbDroneValidationFailure(string.Empty,
                                "No results were returned from your import list, please check your settings and the log for details.")

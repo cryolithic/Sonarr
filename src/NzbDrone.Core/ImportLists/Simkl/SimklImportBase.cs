@@ -4,6 +4,8 @@ using NLog;
 using NzbDrone.Common.Extensions;
 using NzbDrone.Common.Http;
 using NzbDrone.Core.Configuration;
+using NzbDrone.Core.ImportLists.Simkl.User;
+using NzbDrone.Core.Localization;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.Validation;
@@ -28,13 +30,14 @@ namespace NzbDrone.Core.ImportLists.Simkl
                            IImportListStatusService importListStatusService,
                            IConfigService configService,
                            IParsingService parsingService,
+                           ILocalizationService localizationService,
                            Logger logger)
-            : base(httpClient, importListStatusService, configService, parsingService, logger)
+            : base(httpClient, importListStatusService, configService, parsingService, localizationService, logger)
         {
             _importListRepository = netImportRepository;
         }
 
-        public override IList<ImportListItemInfo> Fetch()
+        public override ImportListFetchResult Fetch()
         {
             Settings.Validate().Filter("AccessToken", "RefreshToken").ThrowOnError();
             _logger.Trace($"Access token expires at {Settings.Expires}");
@@ -45,16 +48,15 @@ namespace NzbDrone.Core.ImportLists.Simkl
                 RefreshToken();
             }
 
-            var lastFetch = _importListStatusService.GetLastSyncListInfo(Definition.Id);
+            var lastFetch = _importListStatusService.GetListStatus(Definition.Id).LastInfoSync;
             var lastActivity = GetLastActivity();
 
             // Check to see if user has any activity since last sync, if not return empty to avoid work
             if (lastFetch.HasValue && lastActivity < lastFetch.Value.AddHours(-2))
             {
-                return Array.Empty<ImportListItemInfo>();
+                // mark failure to avoid deleting series due to emptiness
+                return new ImportListFetchResult(new List<ImportListItemInfo>(), true);
             }
-
-            var generator = GetRequestGenerator();
 
             return FetchItems(g => g.GetListItems(), true);
         }
@@ -107,7 +109,17 @@ namespace NzbDrone.Core.ImportLists.Simkl
 
                 if (response?.Resource != null)
                 {
-                    return response.Resource.TvShows.All;
+                    var showType = Settings switch
+                    {
+                        SimklUserSettings userSettings => (SimklUserShowType)userSettings.ShowType,
+                        _ => SimklUserShowType.Shows
+                    };
+
+                    return showType switch
+                    {
+                        SimklUserShowType.Anime => response.Resource.Anime.All,
+                        _ => response.Resource.TvShows.All
+                    };
                 }
             }
             catch (HttpException)

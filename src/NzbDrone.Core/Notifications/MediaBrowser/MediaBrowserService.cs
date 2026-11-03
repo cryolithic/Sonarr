@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Net;
 using FluentValidation.Results;
@@ -61,9 +61,8 @@ namespace NzbDrone.Core.Notifications.Emby
         {
             try
             {
-                _logger.Debug("Testing connection to MediaBrowser: {0}", settings.Address);
-
-                Notify(settings, "Test from Sonarr", "Success! MediaBrowser has been successfully configured!");
+                _logger.Debug("Testing connection to Emby/Jellyfin : {0}", settings.Address);
+                _proxy.TestConnection(settings);
             }
             catch (HttpException ex)
             {
@@ -71,11 +70,35 @@ namespace NzbDrone.Core.Notifications.Emby
                 {
                     return new ValidationFailure("ApiKey", _localizationService.GetLocalizedString("NotificationsValidationInvalidApiKey"));
                 }
+                else
+                {
+                    _logger.Trace(ex, "Error when connecting to Emby/Jellyfin");
+                    return new ValidationFailure("Host", _localizationService.GetLocalizedString("NotificationsValidationUnableToSendTestMessage", new Dictionary<string, object> { { "exceptionMessage", ex.Message } }));
+                }
             }
             catch (Exception ex)
             {
                 _logger.Error(ex, "Unable to send test message");
                 return new ValidationFailure("Host", _localizationService.GetLocalizedString("NotificationsValidationUnableToSendTestMessage", new Dictionary<string, object> { { "exceptionMessage", ex.Message } }));
+            }
+
+            if (settings.Notify)
+            {
+                try
+                {
+                    Notify(settings, "Test from Sonarr", "Success! MediaBrowser has been successfully configured!");
+                }
+                catch (HttpException ex)
+                {
+                    if (ex.Response.StatusCode == HttpStatusCode.NotFound)
+                    {
+                        return new ValidationFailure("Notify", "Unable to send notification to Emby. If you're using Jellyfin disable 'Send Notifications'");
+                    }
+                    else
+                    {
+                        throw;
+                    }
+                }
             }
 
             return null;

@@ -16,12 +16,12 @@ namespace NzbDrone.Core.AutoTagging.Specifications
 
     public class OriginalLanguageSpecification : AutoTaggingSpecificationBase
     {
-        private static readonly OriginalLanguageSpecificationValidator Validator = new ();
+        private static readonly OriginalLanguageSpecificationValidator Validator = new();
 
         public override int Order => 1;
         public override string ImplementationName => "Original Language";
 
-        [FieldDefinition(1, Label = "Language", Type = FieldType.Select, SelectOptions = typeof(OriginalLanguageFieldConverter))]
+        [FieldDefinition(1, Label = "AutoTaggingSpecificationOriginalLanguage", Type = FieldType.Select, SelectOptions = typeof(OriginalLanguageFieldConverter))]
         public int Value { get; set; }
 
         protected override bool IsSatisfiedByWithoutNegate(Series series)

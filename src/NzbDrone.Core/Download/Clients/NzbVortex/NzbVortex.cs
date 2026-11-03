@@ -58,7 +58,7 @@ namespace NzbDrone.Core.Download.Clients.NzbVortex
             {
                 var queueItem = new DownloadClientItem();
 
-                queueItem.DownloadClientInfo = DownloadClientItemClientInfo.FromDownloadClient(this);
+                queueItem.DownloadClientInfo = DownloadClientItemClientInfo.FromDownloadClient(this, false);
                 queueItem.DownloadId = vortexQueueItem.AddUUID ?? vortexQueueItem.Id.ToString();
                 queueItem.Category = vortexQueueItem.GroupName;
                 queueItem.Title = vortexQueueItem.UiTitle;
@@ -140,7 +140,7 @@ namespace NzbDrone.Core.Download.Clients.NzbVortex
         {
             var status = new DownloadClientInfo
             {
-                IsLocalhost = Settings.Host == "127.0.0.1" || Settings.Host == "localhost"
+                IsLocalhost = Settings.Host.IsLocalhostAddress()
             };
 
             return status;

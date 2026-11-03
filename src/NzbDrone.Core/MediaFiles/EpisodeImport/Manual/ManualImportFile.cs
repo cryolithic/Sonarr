@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using NzbDrone.Common.Extensions;
 using NzbDrone.Core.Languages;
+using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.Qualities;
 
 namespace NzbDrone.Core.MediaFiles.EpisodeImport.Manual
@@ -11,11 +12,13 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport.Manual
         public string Path { get; set; }
         public string FolderName { get; set; }
         public int SeriesId { get; set; }
-        public List<int> EpisodeIds { get; set; }
+        public List<int> EpisodeIds { get; set; } = [];
         public int? EpisodeFileId { get; set; }
-        public QualityModel Quality { get; set; }
-        public List<Language> Languages { get; set; }
+        public QualityModel Quality { get; set; } = new();
+        public List<Language> Languages { get; set; } = [];
         public string ReleaseGroup { get; set; }
+        public int IndexerFlags { get; set; }
+        public ReleaseType ReleaseType { get; set; }
         public string DownloadId { get; set; }
 
         public bool Equals(ManualImportFile other)

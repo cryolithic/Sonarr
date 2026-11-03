@@ -22,7 +22,7 @@ namespace NzbDrone.Core.ImportLists.Trakt
                 return series;
             }
 
-            var traktResponses = STJson.Deserialize<List<TraktResponse>>(_importResponse.Content);
+            var traktResponses = STJson.Deserialize<List<TraktResponse>>(_importResponse.HttpResponse.ResponseData);
 
             // no series were returned
             if (traktResponses == null)
@@ -35,7 +35,8 @@ namespace NzbDrone.Core.ImportLists.Trakt
                 series.AddIfNotNull(new ImportListItemInfo()
                 {
                     Title = traktResponse.Show.Title,
-                    TvdbId = traktResponse.Show.Ids.Tvdb.GetValueOrDefault()
+                    TvdbId = traktResponse.Show.Ids.Tvdb.GetValueOrDefault(),
+                    ImdbId = traktResponse.Show.Ids.Imdb
                 });
             }
 

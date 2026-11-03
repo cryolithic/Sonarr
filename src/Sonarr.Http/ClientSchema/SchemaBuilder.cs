@@ -162,7 +162,7 @@ namespace Sonarr.Http.ClientSchema
                         field.Hidden = fieldAttribute.Hidden.ToString().FirstCharToLower();
                     }
 
-                    if (fieldAttribute.Type is FieldType.Number && propertyInfo.PropertyType == typeof(double))
+                    if (fieldAttribute.Type is FieldType.Number && (propertyInfo.PropertyType == typeof(double) || propertyInfo.PropertyType == typeof(double?)))
                     {
                         field.IsFloat = true;
                     }
@@ -228,10 +228,15 @@ namespace Sonarr.Http.ClientSchema
 
                         if (attrib != null)
                         {
+                            var label = attrib.Label.IsNotNullOrWhiteSpace()
+                                ? _localizationService.GetLocalizedString(attrib.Label,
+                                    GetTokens(selectOptions, attrib.Label, TokenField.Label))
+                                : attrib.Label;
+
                             return new SelectOption
                             {
                                 Value = value,
-                                Name = attrib.Label ?? name,
+                                Name = label ?? name,
                                 Order = attrib.Order,
                                 Hint = attrib.Hint ?? $"({value})"
                             };

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using NzbDrone.Common.Http.Proxy;
+using NzbDrone.Core.ImportLists;
 using NzbDrone.Core.MediaFiles;
 using NzbDrone.Core.MediaFiles.EpisodeImport;
 using NzbDrone.Core.Qualities;
@@ -30,6 +31,7 @@ namespace NzbDrone.Core.Configuration
         bool CreateEmptySeriesFolders { get; set; }
         bool DeleteEmptyFolders { get; set; }
         FileDateType FileDate { get; set; }
+        bool SkipFreeSpaceCheckWhenGrabbing { get; set; }
         bool SkipFreeSpaceCheckWhenImporting { get; set; }
         int MinimumFreeSpaceWhenImporting { get; set; }
         bool CopyUsingHardlinks { get; set; }
@@ -40,6 +42,11 @@ namespace NzbDrone.Core.Configuration
         string ExtraFileExtensions { get; set; }
         RescanAfterRefreshType RescanAfterRefresh { get; set; }
         EpisodeTitleRequiredType EpisodeTitleRequired { get; set; }
+        string UserRejectedExtensions { get; set; }
+
+        // Season Pack Upgrade (Media Management)
+        SeasonPackUpgradeType SeasonPackUpgrade { get; set; }
+        double SeasonPackUpgradeThreshold { get; set; }
 
         // Permissions (Media Management)
         bool SetPermissionsLinux { get; set; }
@@ -52,6 +59,9 @@ namespace NzbDrone.Core.Configuration
         int MaximumSize { get; set; }
         int MinimumAge { get; set; }
 
+        ListSyncLevelType ListSyncLevel { get; set; }
+        int ListSyncTag { get; set; }
+
         // UI
         int FirstDayOfWeek { get; set; }
         string CalendarWeekColumnHeader { get; set; }
@@ -59,9 +69,12 @@ namespace NzbDrone.Core.Configuration
         string ShortDateFormat { get; set; }
         string LongDateFormat { get; set; }
         string TimeFormat { get; set; }
+        string TimeZone { get; set; }
         bool ShowRelativeDates { get; set; }
         bool EnableColorImpairedMode { get; set; }
+        string HeaderColor { get; set; }
         int UILanguage { get; set; }
+        int PreferredMetadataLanguage { get; set; }
 
         // Internal
         bool CleanupMetadataImages { get; set; }

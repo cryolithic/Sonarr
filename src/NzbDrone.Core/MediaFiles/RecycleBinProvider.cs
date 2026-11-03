@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using NLog;
 using NzbDrone.Common.Disk;
@@ -14,7 +15,7 @@ namespace NzbDrone.Core.MediaFiles
     public interface IRecycleBinProvider
     {
         void DeleteFolder(string path);
-        void DeleteFile(string path, string subfolder = "");
+        string DeleteFile(string path, string subfolder = "");
         void Empty();
         void Cleanup();
     }
@@ -66,7 +67,7 @@ namespace NzbDrone.Core.MediaFiles
             }
         }
 
-        public void DeleteFile(string path, string subfolder = "")
+        public string DeleteFile(string path, string subfolder = "")
         {
             _logger.Debug("Attempting to send '{0}' to recycling bin", path);
             var recyclingBin = _configService.RecycleBin;
@@ -82,6 +83,8 @@ namespace NzbDrone.Core.MediaFiles
 
                 _diskProvider.DeleteFile(path);
                 _logger.Debug("File has been permanently deleted: {0}", path);
+
+                return null;
             }
             else
             {
@@ -128,6 +131,8 @@ namespace NzbDrone.Core.MediaFiles
                 SetLastWriteTime(destination, DateTime.UtcNow);
 
                 _logger.Debug("File has been moved to the recycling bin: {0}", destination);
+
+                return destination;
             }
         }
 
@@ -172,20 +177,26 @@ namespace NzbDrone.Core.MediaFiles
 
             _logger.Info("Removing items older than {0} days from the recycling bin", cleanupDays);
 
+            var removedFiles = new List<string>();
+            var skippedFiles = new List<string>();
+
             foreach (var file in _diskProvider.GetFiles(_configService.RecycleBin, true))
             {
                 if (_diskProvider.FileGetLastWrite(file).AddDays(cleanupDays) > DateTime.UtcNow)
                 {
                     _logger.Debug("File hasn't expired yet, skipping: {0}", file);
+                    skippedFiles.Add(file);
                     continue;
                 }
 
+                removedFiles.Add(file);
+                _logger.Debug("File expired, deleting: {0}", file);
                 _diskProvider.DeleteFile(file);
             }
 
             _diskProvider.RemoveEmptySubfolders(_configService.RecycleBin);
 
-            _logger.Debug("Recycling Bin has been cleaned up.");
+            _logger.Debug("Recycling Bin has been cleaned up. Removed: {0}. Skipped: {1}", removedFiles.Count, skippedFiles.Count);
         }
 
         private void SetLastWriteTime(string file, DateTime dateTime)
@@ -193,13 +204,16 @@ namespace NzbDrone.Core.MediaFiles
             // Swallow any IOException that may be thrown due to "Invalid parameter"
             try
             {
+                _logger.Trace("Setting last write time for file: {0}", file);
                 _diskProvider.FileSetLastWriteTime(file, dateTime);
             }
-            catch (IOException)
+            catch (IOException ex)
             {
+                _logger.Warn(ex, "Failed to set last write time for file: {0}", file);
             }
-            catch (UnauthorizedAccessException)
+            catch (UnauthorizedAccessException ex)
             {
+                _logger.Warn(ex, "Failed to set last write time for file: {0}", file);
             }
         }
 

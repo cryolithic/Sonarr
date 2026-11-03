@@ -1,3 +1,4 @@
+using System;
 using FluentValidation;
 using NzbDrone.Core.Annotations;
 using NzbDrone.Core.Parser;
@@ -9,18 +10,24 @@ namespace NzbDrone.Core.CustomFormats
     {
         public ResolutionSpecificationValidator()
         {
-            RuleFor(c => c.Value).NotEmpty();
+            RuleFor(c => c.Value).Custom((value, context) =>
+            {
+                if (!Enum.IsDefined(typeof(Resolution), value))
+                {
+                    context.AddFailure($"Invalid resolution condition value: {value}");
+                }
+            });
         }
     }
 
     public class ResolutionSpecification : CustomFormatSpecificationBase
     {
-        private static readonly ResolutionSpecificationValidator Validator = new ResolutionSpecificationValidator();
+        private static readonly ResolutionSpecificationValidator Validator = new();
 
         public override int Order => 6;
         public override string ImplementationName => "Resolution";
 
-        [FieldDefinition(1, Label = "Resolution", Type = FieldType.Select, SelectOptions = typeof(Resolution))]
+        [FieldDefinition(1, Label = "CustomFormatsSpecificationResolution", Type = FieldType.Select, SelectOptions = typeof(Resolution))]
         public int Value { get; set; }
 
         protected override bool IsSatisfiedByWithoutNegate(CustomFormatInput input)

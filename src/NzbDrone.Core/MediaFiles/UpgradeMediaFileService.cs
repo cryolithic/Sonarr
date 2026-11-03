@@ -57,14 +57,19 @@ namespace NzbDrone.Core.MediaFiles
                 var file = existingFile.First();
                 var episodeFilePath = Path.Combine(localEpisode.Series.Path, file.RelativePath);
                 var subfolder = rootFolder.GetRelativePath(_diskProvider.GetParentFolder(episodeFilePath));
+                string recycleBinPath = null;
 
                 if (_diskProvider.FileExists(episodeFilePath))
                 {
                     _logger.Debug("Removing existing episode file: {0}", file);
-                    _recycleBinProvider.DeleteFile(episodeFilePath, subfolder);
+                    recycleBinPath = _recycleBinProvider.DeleteFile(episodeFilePath, subfolder);
+                }
+                else
+                {
+                    _logger.Warn("Existing episode file missing from disk: {0}", episodeFilePath);
                 }
 
-                moveFileResult.OldFiles.Add(file);
+                moveFileResult.OldFiles.Add(new DeletedEpisodeFile(file, recycleBinPath));
                 _mediaFileService.Delete(file, DeleteMediaFileReason.Upgrade);
             }
 

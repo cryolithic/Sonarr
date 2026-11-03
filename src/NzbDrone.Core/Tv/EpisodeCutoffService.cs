@@ -1,9 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
-using NLog;
 using NzbDrone.Common.Extensions;
 using NzbDrone.Core.Datastore;
-using NzbDrone.Core.Languages;
 using NzbDrone.Core.Profiles.Qualities;
 using NzbDrone.Core.Qualities;
 
@@ -11,7 +9,7 @@ namespace NzbDrone.Core.Tv
 {
     public interface IEpisodeCutoffService
     {
-        PagingSpec<Episode> EpisodesWhereCutoffUnmet(PagingSpec<Episode> pagingSpec);
+        PagingSpec<Episode> EpisodesWhereCutoffUnmet(PagingSpec<Episode> pagingSpec, HashSet<int> seriesTags = null, List<int> quality = null);
     }
 
     public class EpisodeCutoffService : IEpisodeCutoffService
@@ -19,16 +17,15 @@ namespace NzbDrone.Core.Tv
         private readonly IEpisodeRepository _episodeRepository;
         private readonly IQualityProfileService _qualityProfileService;
 
-        public EpisodeCutoffService(IEpisodeRepository episodeRepository, IQualityProfileService qualityProfileService, Logger logger)
+        public EpisodeCutoffService(IEpisodeRepository episodeRepository, IQualityProfileService qualityProfileService)
         {
             _episodeRepository = episodeRepository;
             _qualityProfileService = qualityProfileService;
         }
 
-        public PagingSpec<Episode> EpisodesWhereCutoffUnmet(PagingSpec<Episode> pagingSpec)
+        public PagingSpec<Episode> EpisodesWhereCutoffUnmet(PagingSpec<Episode> pagingSpec, HashSet<int> seriesTags = null, List<int> quality = null)
         {
             var qualitiesBelowCutoff = new List<QualitiesBelowCutoff>();
-            var languagesBelowCutoff = new List<LanguagesBelowCutoff>();
             var profiles = _qualityProfileService.All();
 
             // Get all items less than the cutoff
@@ -51,7 +48,7 @@ namespace NzbDrone.Core.Tv
                 return pagingSpec;
             }
 
-            return _episodeRepository.EpisodesWhereCutoffUnmet(pagingSpec, qualitiesBelowCutoff, languagesBelowCutoff, false);
+            return _episodeRepository.EpisodesWhereCutoffUnmet(pagingSpec, qualitiesBelowCutoff, false, seriesTags, quality);
         }
     }
 }

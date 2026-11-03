@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using NzbDrone.Common.Cache;
 using NzbDrone.Core.Configuration;
@@ -22,8 +23,9 @@ namespace NzbDrone.Http
 
         [AllowAnonymous]
         [HttpGet("/ping")]
+        [HttpHead("/ping")]
         [Produces("application/json")]
-        public ActionResult<PingResource> GetStatus()
+        public Results<Ok<PingResource>, InternalServerError<PingResource>> GetStatus()
         {
             try
             {
@@ -31,13 +33,13 @@ namespace NzbDrone.Http
             }
             catch (Exception)
             {
-                return StatusCode(StatusCodes.Status500InternalServerError, new PingResource
+                return TypedResults.InternalServerError(new PingResource
                 {
                     Status = "Error"
                 });
             }
 
-            return StatusCode(StatusCodes.Status200OK, new PingResource
+            return TypedResults.Ok(new PingResource
             {
                 Status = "OK"
             });

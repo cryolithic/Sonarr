@@ -1,12 +1,12 @@
 using FluentValidation;
 using NzbDrone.Core.Annotations;
+using NzbDrone.Core.Validation;
 
 namespace NzbDrone.Core.ImportLists.AniList.List
 {
     public class AniListSettingsValidator : AniListSettingsBaseValidator<AniListSettings>
     {
         public AniListSettingsValidator()
-        : base()
         {
             RuleFor(c => c.Username).NotEmpty();
 
@@ -18,10 +18,11 @@ namespace NzbDrone.Core.ImportLists.AniList.List
 
     public class AniListSettings : AniListSettingsBase<AniListSettings>
     {
-        public const string sectionImport = "Import List Status";
+        public const string SectionImport = "Import List Status";
+
+        private static readonly AniListSettingsValidator Validator = new();
 
         public AniListSettings()
-        : base()
         {
             ImportCurrent = true;
             ImportPlanning = true;
@@ -29,42 +30,45 @@ namespace NzbDrone.Core.ImportLists.AniList.List
             ImportFinished = true;
         }
 
-        protected override AbstractValidator<AniListSettings> Validator => new AniListSettingsValidator();
-
-        [FieldDefinition(1, Label = "Username", HelpText = "Username for the List to import from")]
+        [FieldDefinition(1, Label = "Username", HelpText = "ImportListsAniListSettingsUsernameHelpText")]
         public string Username { get; set; }
 
-        [FieldDefinition(2, Label = "Import Watching", Type = FieldType.Checkbox, Section = sectionImport, HelpText = "List: Currently Watching")]
+        [FieldDefinition(2, Label = "ImportListsAniListSettingsImportWatching", Type = FieldType.Checkbox, Section = SectionImport, HelpText = "ImportListsAniListSettingsImportWatchingHelpText")]
         public bool ImportCurrent { get; set; }
 
-        [FieldDefinition(3, Label = "Import Planning", Type = FieldType.Checkbox, Section = sectionImport, HelpText = "List: Planning to Watch")]
+        [FieldDefinition(3, Label = "ImportListsAniListSettingsImportPlanning", Type = FieldType.Checkbox, Section = SectionImport, HelpText = "ImportListsAniListSettingsImportPlanningHelpText")]
         public bool ImportPlanning { get; set; }
 
-        [FieldDefinition(4, Label = "Import Completed", Type = FieldType.Checkbox, Section = sectionImport, HelpText = "List: Completed Watching")]
+        [FieldDefinition(4, Label = "ImportListsAniListSettingsImportCompleted", Type = FieldType.Checkbox, Section = SectionImport, HelpText = "ImportListsAniListSettingsImportCompletedHelpText")]
         public bool ImportCompleted { get; set; }
 
-        [FieldDefinition(5, Label = "Import Dropped", Type = FieldType.Checkbox, Section = sectionImport, HelpText = "List: Dropped")]
+        [FieldDefinition(5, Label = "ImportListsAniListSettingsImportDropped", Type = FieldType.Checkbox, Section = SectionImport, HelpText = "ImportListsAniListSettingsImportDroppedHelpText")]
         public bool ImportDropped { get; set; }
 
-        [FieldDefinition(6, Label = "Import Paused", Type = FieldType.Checkbox, Section = sectionImport, HelpText = "List: On Hold")]
+        [FieldDefinition(6, Label = "ImportListsAniListSettingsImportPaused", Type = FieldType.Checkbox, Section = SectionImport, HelpText = "ImportListsAniListSettingsImportPausedHelpText")]
         public bool ImportPaused { get; set; }
 
-        [FieldDefinition(7, Label = "Import Repeating", Type = FieldType.Checkbox, Section = sectionImport, HelpText = "List: Currently Rewatching")]
+        [FieldDefinition(7, Label = "ImportListsAniListSettingsImportRepeating", Type = FieldType.Checkbox, Section = SectionImport, HelpText = "ImportListsAniListSettingsImportRepeatingHelpText")]
         public bool ImportRepeating { get; set; }
 
-        [FieldDefinition(8, Label = "Import Finished", Type = FieldType.Checkbox, Section = sectionImport, HelpText = "Media: All episodes have aired")]
+        [FieldDefinition(8, Label = "ImportListsAniListSettingsImportFinished", Type = FieldType.Checkbox, Section = SectionImport, HelpText = "ImportListsAniListSettingsImportFinishedHelpText")]
         public bool ImportFinished { get; set; }
 
-        [FieldDefinition(9, Label = "Import Releasing", Type = FieldType.Checkbox, Section = sectionImport, HelpText = "Media: Currently airing new episodes")]
+        [FieldDefinition(9, Label = "ImportListsAniListSettingsImportReleasing", Type = FieldType.Checkbox, Section = SectionImport, HelpText = "ImportListsAniListSettingsImportReleasingHelpText")]
         public bool ImportReleasing { get; set; }
 
-        [FieldDefinition(10, Label = "Import Not Yet Released", Type = FieldType.Checkbox, Section = sectionImport, HelpText = "Media: Airing has not yet started")]
+        [FieldDefinition(10, Label = "ImportListsAniListSettingsImportNotYetReleased", Type = FieldType.Checkbox, Section = SectionImport, HelpText = "ImportListsAniListSettingsImportNotYetReleasedHelpText")]
         public bool ImportUnreleased { get; set; }
 
-        [FieldDefinition(11, Label = "Import Cancelled", Type = FieldType.Checkbox, Section = sectionImport, HelpText = "Media: Series is cancelled")]
+        [FieldDefinition(11, Label = "ImportListsAniListSettingsImportCancelled", Type = FieldType.Checkbox, Section = SectionImport, HelpText = "ImportListsAniListSettingsImportCancelledHelpText")]
         public bool ImportCancelled { get; set; }
 
-        [FieldDefinition(12, Label = "Import Hiatus", Type = FieldType.Checkbox, Section = sectionImport, HelpText = "Media: Series on Hiatus")]
+        [FieldDefinition(12, Label = "ImportListsAniListSettingsImportHiatus", Type = FieldType.Checkbox, Section = SectionImport, HelpText = "ImportListsAniListSettingsImportHiatusHelpText")]
         public bool ImportHiatus { get; set; }
+
+        public override NzbDroneValidationResult Validate()
+        {
+            return new NzbDroneValidationResult(Validator.Validate(this));
+        }
     }
 }

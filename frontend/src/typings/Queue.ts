@@ -1,12 +1,15 @@
 import ModelBase from 'App/ModelBase';
+import DownloadProtocol from 'DownloadClient/DownloadProtocol';
+import Episode from 'Episode/Episode';
 import Language from 'Language/Language';
 import { QualityModel } from 'Quality/Quality';
-import CustomFormat from 'typings/CustomFormat';
+import { CustomFormat } from 'Settings/CustomFormats/CustomFormats/useCustomFormats';
 
 export type QueueTrackedDownloadStatus = 'ok' | 'warning' | 'error';
 
 export type QueueTrackedDownloadState =
   | 'downloading'
+  | 'importBlocked'
   | 'importPending'
   | 'importing'
   | 'imported'
@@ -19,28 +22,39 @@ export interface StatusMessage {
   messages: string[];
 }
 
+export interface QueueSeason {
+  seasonNumber: number;
+  episodeCount: number;
+  episodesWithFilesCount: number;
+}
+
 interface Queue extends ModelBase {
   languages: Language[];
   quality: QualityModel;
   customFormats: CustomFormat[];
+  customFormatScore: number;
   size: number;
   title: string;
-  sizeleft: number;
-  timeleft: string;
+  sizeLeft: number;
+  timeLeft: string;
   estimatedCompletionTime: string;
+  added?: string;
   status: string;
   trackedDownloadStatus: QueueTrackedDownloadStatus;
   trackedDownloadState: QueueTrackedDownloadState;
   statusMessages: StatusMessage[];
   errorMessage: string;
   downloadId: string;
-  protocol: string;
+  protocol: DownloadProtocol;
   downloadClient: string;
   outputPath: string;
-  episodeHasFile: boolean;
+  episodesWithFilesCount: number;
   seriesId?: number;
-  episodeId?: number;
-  seasonNumber?: number;
+  episodeIds: number[];
+  seasons: QueueSeason[];
+  downloadClientHasPostImportCategory: boolean;
+  isFullSeason: boolean;
+  episodes?: Episode[];
 }
 
 export default Queue;

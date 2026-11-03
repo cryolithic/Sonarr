@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using NLog;
 using NzbDrone.Common.EnsureThat;
 using NzbDrone.Common.EnvironmentInfo;
@@ -29,7 +30,9 @@ namespace NzbDrone.Common.Disk
 
         public abstract long? GetAvailableSpace(string path);
         public abstract void InheritFolderPermissions(string filename);
-        public abstract void SetEveryonePermissions(string filename);
+        public abstract void SetCurrentUserPermissions(string filename);
+        public abstract void SetServiceAccountPermissions(string filename);
+        public abstract void RemoveEveryonePermissions(string filename);
         public abstract void SetFilePermissions(string path, string mask, string group);
         public abstract void SetPermissions(string path, string mask, string group);
         public abstract void CopyPermissions(string sourcePath, string targetPath);
@@ -131,7 +134,7 @@ namespace NzbDrone.Common.Disk
             {
                 var testPath = Path.Combine(path, "sonarr_write_test.txt");
                 var testContent = $"This file was created to verify if '{path}' is writable. It should've been automatically deleted. Feel free to delete it.";
-                File.WriteAllText(testPath, testContent);
+                WriteAllText(testPath, testContent);
                 File.Delete(testPath);
                 return true;
             }
@@ -153,7 +156,11 @@ namespace NzbDrone.Common.Disk
         {
             Ensure.That(path, () => path).IsValidPath(PathValidationType.CurrentOs);
 
-            return Directory.EnumerateDirectories(path);
+            return Directory.EnumerateDirectories(path, "*", new EnumerationOptions
+            {
+                AttributesToSkip = FileAttributes.System,
+                IgnoreInaccessible = true
+            });
         }
 
         public IEnumerable<string> GetFiles(string path, bool recursive)
@@ -185,6 +192,25 @@ namespace NzbDrone.Common.Disk
             }
 
             var fi = new FileInfo(path);
+
+            try
+            {
+                // If the file is a symlink, resolve the target path and get the size of the target file.
+                if (fi.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                {
+                    var targetPath = fi.ResolveLinkTarget(true)?.FullName;
+
+                    if (targetPath != null)
+                    {
+                        fi = new FileInfo(targetPath);
+                    }
+                }
+            }
+            catch (IOException ex)
+            {
+                Logger.Trace(ex, "Unable to resolve symlink target for {0}", path);
+            }
+
             return fi.Length;
         }
 
@@ -214,11 +240,6 @@ namespace NzbDrone.Common.Disk
                 throw new IOException(string.Format("Source and destination can't be the same {0}", source));
             }
 
-            CloneFileInternal(source, destination, overwrite);
-        }
-
-        protected virtual void CloneFileInternal(string source, string destination, bool overwrite = false)
-        {
             CopyFileInternal(source, destination, overwrite);
         }
 
@@ -284,18 +305,30 @@ namespace NzbDrone.Common.Disk
 
         public abstract bool TryCreateHardLink(string source, string destination);
 
-        public virtual bool TryCreateRefLink(string source, string destination)
-        {
-            return false;
-        }
-
         public void DeleteFolder(string path, bool recursive)
         {
             Ensure.That(path, () => path).IsValidPath(PathValidationType.CurrentOs);
 
-            var files = GetFiles(path, recursive);
+            var files = GetFiles(path, recursive).ToList();
 
-            files.ToList().ForEach(RemoveReadOnly);
+            files.ForEach(RemoveReadOnly);
+
+            var attempts = 0;
+
+            while (attempts < 3 && files.Any())
+            {
+                EmptyFolder(path);
+
+                if (GetFiles(path, recursive).Any())
+                {
+                    // Wait for IO operations to complete  after emptying the folder since they aren't always
+                    // instantly removed and it can lead to false positives that files are still present.
+                    Thread.Sleep(3000);
+                }
+
+                attempts++;
+                files = GetFiles(path, recursive).ToList();
+            }
 
             Directory.Delete(path, recursive);
         }
@@ -311,7 +344,16 @@ namespace NzbDrone.Common.Disk
         {
             Ensure.That(filename, () => filename).IsValidPath(PathValidationType.CurrentOs);
             RemoveReadOnly(filename);
-            File.WriteAllText(filename, contents);
+
+            // File.WriteAllText is broken on net core when writing to some CIFS mounts
+            // This workaround from https://github.com/dotnet/runtime/issues/42790#issuecomment-700362617
+            using (var fs = new FileStream(filename, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                using (var writer = new StreamWriter(fs))
+                {
+                    writer.Write(contents);
+                }
+            }
         }
 
         public void FolderSetLastWriteTime(string path, DateTime dateTime)

@@ -15,6 +15,7 @@ namespace NzbDrone.Core.Download.TrackedDownloads
         public TrackedDownloadStatusMessage[] StatusMessages { get; private set; }
         public DownloadProtocol Protocol { get; set; }
         public string Indexer { get; set; }
+        public DateTime? Added { get; set; }
         public bool IsTrackable { get; set; }
         public bool HasNotifiedManualInteractionRequired { get; set; }
 
@@ -34,11 +35,21 @@ namespace NzbDrone.Core.Download.TrackedDownloads
             Status = TrackedDownloadStatus.Warning;
             StatusMessages = statusMessages;
         }
+
+        public void Fail()
+        {
+            Status = TrackedDownloadStatus.Error;
+            State = TrackedDownloadState.FailedPending;
+
+            // Set CanBeRemoved to allow the failed item to be removed from the client
+            DownloadItem.CanBeRemoved = true;
+        }
     }
 
     public enum TrackedDownloadState
     {
         Downloading,
+        ImportBlocked,
         ImportPending,
         Importing,
         Imported,

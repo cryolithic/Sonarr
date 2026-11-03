@@ -18,15 +18,15 @@ namespace NzbDrone.Core.AutoTagging.Specifications
 
     public class YearSpecification : AutoTaggingSpecificationBase
     {
-        private static readonly YearSpecificationValidator Validator = new ();
+        private static readonly YearSpecificationValidator Validator = new();
 
         public override int Order => 1;
         public override string ImplementationName => "Year";
 
-        [FieldDefinition(1, Label = "Minimum Year", Type = FieldType.Number)]
+        [FieldDefinition(1, Label = "AutoTaggingSpecificationMinimumYear", Type = FieldType.Number)]
         public int Min { get; set; }
 
-        [FieldDefinition(2, Label = "Maximum Year", Type = FieldType.Number)]
+        [FieldDefinition(2, Label = "AutoTaggingSpecificationMaximumYear", Type = FieldType.Number)]
         public int Max { get; set; }
 
         protected override bool IsSatisfiedByWithoutNegate(Series series)

@@ -5,6 +5,9 @@
 ### Version v1.0.0 2023-12-29 - StevieTV - adapted from servarr script for Sonarr installs
 ### Version V1.0.1 2024-01-02 - StevieTV - remove UTF8-BOM
 ### Version V1.0.2 2024-01-03 - markus101 - Get user input from /dev/tty
+### Version V1.0.3 2024-01-06 - StevieTV - exit script when it is ran from install directory
+### Version V1.0.4 2025-04-05 - kaecyra - Allow user/group to be supplied via CLI, add unattended mode
+### Version V1.0.5 2025-07-08 - bparkin1283 - use systemctl instead of service for stopping app
 
 ### Boilerplate Warning
 #THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
@@ -15,8 +18,8 @@
 #OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 #WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-scriptversion="1.0.2"
-scriptdate="2024-01-03"
+scriptversion="1.0.4"
+scriptdate="2025-04-05"
 
 set -euo pipefail
 
@@ -42,18 +45,112 @@ bindir="${installdir}/${app^}" # Full Path to Install Location
 datadir="/var/lib/$app/"       # {Update me if needed} AppData directory to use
 app_bin=${app^}                # Binary Name of the app
 
-# Prompt User
-read -r -p "What user should ${app^} run as? (Default: $app): " app_uid < /dev/tty
+# This script should not be ran from installdir, otherwise later in the script the extracted files will be removed before they can be moved to installdir.
+if [ "$installdir" == "$(dirname -- "$( readlink -f -- "$0"; )")" ] || [ "$bindir" == "$(dirname -- "$( readlink -f -- "$0"; )")" ]; then
+    echo "You should not run this script from the intended install directory. The script will exit. Please re-run it from another directory"
+    exit
+fi
+
+show_help() {
+    cat <<EOF
+Usage: $(basename "$0") [OPTIONS]
+
+Options:
+  --user <name>       What user will $app run under?
+                      User will be created if it doesn't already exist.
+
+  --group <name>      What group will $app run under?
+                      Group will be created if it doesn't already exist.
+
+  -u                  Unattended mode
+                      The installer will not prompt or pause, making it suitable for automated installations.
+                      This option requires the use of --user and --group to supply those inputs for the script.
+
+  -h, --help          Show this help message and exit
+EOF
+}
+
+# Default values for command-line arguments
+arg_user=""
+arg_group=""
+arg_unattended=false
+
+# Parse command-line arguments
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --user=*)
+            arg_user="${1#*=}"
+            shift
+            ;;
+        --user)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                arg_user="$2"
+                shift 2
+            else
+                echo "Error: --user requires a value." >&2
+                exit 1
+            fi
+            ;;
+        --group=*)
+            arg_group="${1#*=}"
+            shift
+            ;;
+        --group)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                arg_group="$2"
+                shift 2
+            else
+                echo "Error: --group requires a value." >&2
+                exit 1
+            fi
+            ;;
+        -u)
+            arg_unattended=true
+            shift
+            ;;
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1" >&2
+            echo "Use --help to see valid options." >&2
+            exit 1
+            ;;
+    esac
+done
+
+# If unattended mode is requested, require user and group
+if $arg_unattended; then
+    if [[ -z "$arg_user" || -z "$arg_group" ]]; then
+        echo "Error: --user and --group are required when using -u (unattended mode)." >&2
+        exit 1
+    fi
+fi
+
+# Prompt User if necessary
+if [ -n "$arg_user" ]; then
+    app_uid="$arg_user"
+else
+    read -r -p "What user should ${app^} run as? (Default: $app): " app_uid < /dev/tty
+fi
 app_uid=$(echo "$app_uid" | tr -d ' ')
 app_uid=${app_uid:-$app}
-# Prompt Group
-read -r -p "What group should ${app^} run as? (Default: media): " app_guid < /dev/tty
+
+# Prompt Group if necessary
+if [ -n "$arg_group" ]; then
+    app_guid="$arg_group"
+else
+    read -r -p "What group should ${app^} run as? (Default: media): " app_guid < /dev/tty
+fi
 app_guid=$(echo "$app_guid" | tr -d ' ')
 app_guid=${app_guid:-media}
 
 echo "This will install [${app^}] to [$bindir] and use [$datadir] for the AppData Directory"
-echo "${app^} will run as the user [$app_uid] and group [$app_guid]. By continuing, you've confirmed that that user and group will have READ and WRITE access to your Media Library and Download Client Completed Download directories"
-read -n 1 -r -s -p $'Press enter to continue or ctrl+c to exit...\n' < /dev/tty
+echo "${app^} will run as the user [$app_uid] and group [$app_guid]. By continuing, you've confirmed that the selected user and group will have READ and WRITE access to your Media Library and Download Client Completed Download directories"
+if ! $arg_unattended; then
+    read -n 1 -r -s -p $'Press enter to continue or ctrl+c to exit...\n' < /dev/tty
+fi
 
 # Create User / Group as needed
 if [ "$app_guid" != "$app_uid" ]; then
@@ -71,11 +168,10 @@ if ! getent group "$app_guid" | grep -qw "$app_uid"; then
     echo "Added User [$app_uid] to Group [$app_guid]"
 fi
 
-# Stop the App if running
-if service --status-all | grep -Fq "$app"; then
-    systemctl stop "$app"
-    systemctl disable "$app".service
-    echo "Stopped existing $app"
+# Stop and disable the App if running
+if [ $(systemctl is-active "$app") = "active" ]; then
+    systemctl disable --now -q "$app"
+    echo "Stopped and disabled existing $app"
 fi
 
 # Create Appdata Directory
@@ -91,7 +187,7 @@ echo "Directories created"
 echo ""
 echo "Installing pre-requisite Packages"
 # shellcheck disable=SC2086
-apt update && apt install $app_prereq
+apt update && apt install -y $app_prereq
 echo ""
 ARCH=$(dpkg --print-architecture)
 # get arch
@@ -107,7 +203,7 @@ case "$ARCH" in
 esac
 echo ""
 echo "Removing previous tarballs"
-# -f to Force so we fail if it doesnt exist
+# -f to Force so we fail if it doesn't exist
 rm -f "${app^}".*.tar.gz
 echo ""
 echo "Downloading..."
@@ -118,7 +214,6 @@ echo "Installation files downloaded and extracted"
 
 # remove existing installs
 echo "Removing existing installation"
-# If you happen to run this script in the installdir the line below will delete the extracted files and cause the mv some lines below to fail.
 rm -rf "$bindir"
 echo "Installing..."
 mv "${app^}" $installdir

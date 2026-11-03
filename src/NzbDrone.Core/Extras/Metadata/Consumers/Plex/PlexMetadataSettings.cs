@@ -18,8 +18,11 @@ namespace NzbDrone.Core.Extras.Metadata.Consumers.Plex
             SeriesPlexMatchFile = true;
         }
 
-        [FieldDefinition(0, Label = "Series Plex Match File", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Creates a .plexmatch file in the series folder")]
+        [FieldDefinition(0, Label = "MetadataPlexSettingsSeriesPlexMatchFile", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "MetadataPlexSettingsSeriesPlexMatchFileHelpText")]
         public bool SeriesPlexMatchFile { get; set; }
+
+        [FieldDefinition(0, Label = "MetadataPlexSettingsEpisodeMappings", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "MetadataPlexSettingsEpisodeMappingsHelpText")]
+        public bool EpisodeMappings { get; set; }
 
         public NzbDroneValidationResult Validate()
         {

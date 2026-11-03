@@ -57,6 +57,13 @@ namespace NzbDrone.Core.Parser
                                                                new IsoLanguage("id", "", "ind", Language.Indonesian),
                                                                new IsoLanguage("mk", "", "mkd", Language.Macedonian),
                                                                new IsoLanguage("sl", "", "slv", Language.Slovenian),
+                                                               new IsoLanguage("az", "", "aze", Language.Azerbaijani),
+                                                               new IsoLanguage("uz", "", "uzb", Language.Uzbek),
+                                                               new IsoLanguage("ms", "", "msa", Language.Malay),
+                                                               new IsoLanguage("ur", "", "urd", Language.Urdu),
+                                                               new IsoLanguage("rm", "", "roh", Language.Romansh),
+                                                               new IsoLanguage("ka", "", "kat", Language.Georgian),
+                                                               new IsoLanguage("ga", "", "gle", Language.Irish)
                                                            };
 
         private static readonly Dictionary<string, Language> AlternateIsoCodeMappings = new Dictionary<string, Language>
@@ -64,7 +71,9 @@ namespace NzbDrone.Core.Parser
             { "cze", Language.Czech },
             { "dut", Language.Dutch },
             { "mac", Language.Macedonian },
-            { "rum", Language.Romanian }
+            { "rum", Language.Romanian },
+            { "yue", Language.Chinese },
+            { "zhtw", Language.Chinese }
         };
 
         public static IsoLanguage Find(string isoCode)
@@ -86,6 +95,10 @@ namespace NzbDrone.Core.Parser
 
                 return isoLanguages.FirstOrDefault();
             }
+            else if (AlternateIsoCodeMappings.TryGetValue(isoCode, out var alternateLanguage))
+            {
+                return Get(alternateLanguage);
+            }
             else if (langCode.Length == 3)
             {
                 // Lookup ISO639-2T code
@@ -95,10 +108,6 @@ namespace NzbDrone.Core.Parser
                 }
 
                 return All.FirstOrDefault(l => l.ThreeLetterCode == langCode);
-            }
-            else if (AlternateIsoCodeMappings.TryGetValue(isoCode, out var alternateLanguage))
-            {
-                return Get(alternateLanguage);
             }
 
             return null;
